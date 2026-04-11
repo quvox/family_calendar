@@ -1,0 +1,22 @@
+# 家族カレンダーサーバー設定
+
+server:
+  port: 8080
+  fetch_interval_minutes: 5   # iCloudからの.ics取得間隔（分）
+  cache_dir: cache             # キャッシュディレクトリ（server.pyからの相対パス）
+
+calendar:
+  ics_url: "https://p00-caldav.icloud.com/published/2/YOUR_CALENDAR_URL_HERE"  # iCloud公開URL
+
+members:
+  - name: パパ
+    color: "#4A90D9"
+  - name: ママ
+    color: "#E85D75"
+  - name: 太郎
+    color: "#50C878"
+  - name: 花子
+    color: "#FFB347"
+
+unassigned:
+  color: "#888888"   # メンバー識別できなかったイベントの色

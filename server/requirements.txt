@@ -1,0 +1,5 @@
+flask>=3.0
+icalendar>=6.0
+pyyaml>=6.0
+APScheduler>=3.10
+recurring-ical-events>=3.0

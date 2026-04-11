@@ -1,0 +1,10 @@
+{
+  "name": "家族カレンダー",
+  "short_name": "カレンダー",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#f1f5f9",
+  "theme_color": "#f1f5f9",
+  "start_url": "/",
+  "icons": []
+}

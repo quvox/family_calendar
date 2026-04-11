@@ -1,0 +1,15 @@
+[Unit]
+Description=Family Calendar Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/family-calendar-server
+ExecStart=/home/pi/family-calendar-server/venv/bin/python server.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
