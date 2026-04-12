@@ -2,15 +2,12 @@
         build build-webapp \
         dev-server dev-webapp \
         start stop restart status \
-        deploy deploy-webapp deploy-server \
         service-install service-enable service-start service-stop \
         service-restart service-status service-log \
         cron-install \
         clean clean-all clean-cache
 
-# ===== 変数（環境変数で上書き可） =====
-PI_HOST  ?= pi@raspberrypi.local
-PI_DIR   ?= /home/pi/family-calendar-server
+# ===== 変数 =====
 SERVICE  ?= family-calendar
 PYTHON   := server/venv/bin/python
 PIP      := server/venv/bin/pip
@@ -68,25 +65,14 @@ status:
 		echo "サーバーは停止しています"; \
 	fi
 
-# ===== デプロイ（開発マシン → Pi） =====
-
-deploy: build deploy-webapp deploy-server
-
-deploy-webapp:
-	rsync -av --delete webapp/dist/ $(PI_HOST):$(PI_DIR)/dist/
-
-deploy-server:
-	rsync -av \
-		--exclude 'venv/' \
-		--exclude 'cache/' \
-		--exclude '__pycache__/' \
-		--exclude '*.pyc' \
-		server/ $(PI_HOST):$(PI_DIR)/
-
 # ===== サービス管理（Pi 上で実行） =====
 
 service-install:
-	sudo cp server/family-calendar.service /etc/systemd/system/$(SERVICE).service
+	sed \
+		-e "s|__USER__|$(shell whoami)|g" \
+		-e "s|__DIR__|$(CURDIR)/server|g" \
+		server/family-calendar.service \
+		| sudo tee /etc/systemd/system/$(SERVICE).service > /dev/null
 	sudo systemctl daemon-reload
 
 service-enable:
@@ -116,7 +102,7 @@ cron-install: service-install service-enable
 # ===== クリーン =====
 
 clean:
-	rm -rf webapp/dist
+	rm -rf server/dist
 
 clean-all: clean
 	rm -rf server/venv webapp/node_modules
