@@ -46,7 +46,7 @@ export function MemberCard({ member, color, events }: Props) {
               >
                 {event.allDay ? '終日' : formatTime(event.start)}
               </span>
-              <span className="text-xl font-semibold text-slate-900 truncate leading-snug">
+              <span className="text-xl font-semibold text-slate-900 leading-snug break-words min-w-0">
                 {event.title}
               </span>
             </div>

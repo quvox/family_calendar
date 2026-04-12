@@ -56,7 +56,7 @@ export function App() {
             <p className="text-2xl animate-pulse">読み込み中…</p>
           </div>
         ) : hasEvents ? (
-          <div className="grid grid-cols-3 auto-rows-fr gap-4 h-full">
+          <div className="grid portrait:grid-cols-2 landscape:grid-cols-3 auto-rows-fr gap-4 h-full">
             {cards.map(({ member, color, events: memberEvents }) => (
               <MemberCard
                 key={member}

@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import sys
+import threading
 import urllib.request
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
@@ -80,6 +81,49 @@ last_fetched: datetime | None = None
 
 # ===== .ics 取得 =====
 
+def _filter_ics(raw: bytes, window_start: date, window_end: date) -> bytes:
+    """
+    ICS バイト列から window_start〜window_end の範囲外の非繰り返し VEVENT を除去する。
+    icalendar ライブラリを使わずテキスト処理で行うため高速。
+    繰り返しイベント（RRULE / RDATE 付き）は期間に関わらず保持する。
+    """
+    # CRLF → LF に正規化してテキスト処理
+    text = raw.decode('utf-8', errors='replace').replace('\r\n', '\n')
+
+    # BEGIN:VEVENT の直前で分割。先頭トークンは VCALENDAR ヘッダー部分
+    tokens = re.split(r'(?=^BEGIN:VEVENT$)', text, flags=re.MULTILINE)
+
+    result = []
+    for token in tokens:
+        if not token.startswith('BEGIN:VEVENT'):
+            result.append(token)
+            continue
+
+        # 繰り返しイベントは期間不問で保持
+        if re.search(r'^RRULE:', token, re.MULTILINE) or re.search(r'^RDATE', token, re.MULTILINE):
+            result.append(token)
+            continue
+
+        # DTSTART から日付8桁を抽出（例: DTSTART;TZID=Asia/Tokyo:20260412T090000）
+        m = re.search(r'^DTSTART[^\n]*:(\d{8})', token, re.MULTILINE)
+        if not m:
+            result.append(token)
+            continue
+
+        ds = m.group(1)
+        try:
+            event_date = date(int(ds[:4]), int(ds[4:6]), int(ds[6:8]))
+        except ValueError:
+            result.append(token)
+            continue
+
+        if window_start <= event_date <= window_end:
+            result.append(token)
+
+    # LF → CRLF に戻す（ICS 標準）
+    return ''.join(result).replace('\n', '\r\n').encode('utf-8')
+
+
 def fetch_ics() -> None:
     global last_fetched
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -90,11 +134,57 @@ def fetch_ics() -> None:
         )
         with urllib.request.urlopen(req, timeout=30) as resp:
             data = resp.read()
-        CACHE_FILE.write_bytes(data)
+
+        # 前後1日を含む3日分のみ残してキャッシュファイルに保存
+        today = datetime.now(JST).date()
+        filtered = _filter_ics(data, today - timedelta(days=1), today + timedelta(days=1))
+        CACHE_FILE.write_bytes(filtered)
         last_fetched = datetime.now(timezone.utc)
         logger.info("カレンダーを取得・更新しました")
+
+        # ファイル書き込み直後にパースしてキャッシュを更新する。
+        # これによりブラウザリクエストは常にキャッシュヒットする。
+        _get_rie()
     except Exception as exc:
         logger.error(f"カレンダーの取得に失敗しました: {exc}")
+
+
+# ===== ICS パース結果キャッシュ =====
+# Calendar.from_ical() は Pi Zero で数十秒かかるため、
+# ファイルの mtime が変わった時だけ再パースしてメモリに保持する。
+
+_ics_cache: dict = {"mtime": None, "rie": None}
+_ics_cache_lock = threading.Lock()
+
+
+def _get_rie():
+    """
+    recurring_ical_events ラッパーをキャッシュして返す。
+    ICS ファイルが更新された時だけ Calendar.from_ical() を再実行する。
+    """
+    if not CACHE_FILE.exists():
+        logger.warning("キャッシュファイルが存在しません")
+        return None
+
+    mtime = CACHE_FILE.stat().st_mtime
+
+    with _ics_cache_lock:
+        if _ics_cache["mtime"] == mtime and _ics_cache["rie"] is not None:
+            return _ics_cache["rie"]
+
+    # ロック外で重い処理（複数スレッドが同時に再パースしても問題ない）
+    try:
+        cal = Calendar.from_ical(CACHE_FILE.read_bytes())
+    except Exception as exc:
+        logger.error(f"ICS のパースに失敗しました: {exc}")
+        return None
+    rie = recurring_ical_events.of(cal)
+
+    with _ics_cache_lock:
+        _ics_cache["mtime"] = mtime
+        _ics_cache["rie"] = rie
+
+    return rie
 
 
 # ===== メンバー識別 =====
@@ -139,21 +229,15 @@ def identify_member(description: str | None, title: str) -> tuple[str | None, st
 
 def parse_events(target_date: date) -> list[dict]:
     """target_date の全イベントをパースして返す（繰り返しイベント対応）。"""
-    if not CACHE_FILE.exists():
-        logger.warning("キャッシュファイルが存在しません")
-        return []
-
-    try:
-        cal = Calendar.from_ical(CACHE_FILE.read_bytes())
-    except Exception as exc:
-        logger.error(f"ICS のパースに失敗しました: {exc}")
+    rie = _get_rie()
+    if rie is None:
         return []
 
     # recurring_ical_events で繰り返しイベントを展開（終日・時間指定両対応）
     start_dt = datetime.combine(target_date, time.min).replace(tzinfo=JST)
     end_dt = start_dt + timedelta(days=1)
     try:
-        components = recurring_ical_events.of(cal).between(start_dt, end_dt)
+        components = rie.between(start_dt, end_dt)
     except Exception as exc:
         logger.error(f"イベント展開に失敗しました: {exc}")
         return []
@@ -278,10 +362,15 @@ if DIST_DIR.exists():
     def index():
         return send_from_directory(str(DIST_DIR), "index.html")
 
-    @app.errorhandler(404)
-    def not_found(e):
-        if request.path.startswith("/api/"):
+    @app.route("/<path:path>")
+    def static_files(path):
+        # API パスは上位ルートで処理済みのためここには到達しないが念のため除外
+        if path.startswith("api/"):
             return jsonify({"error": "Not found"}), 404
+        # 実ファイルがあればそのまま返す（JS / CSS / manifest.json 等）
+        if (DIST_DIR / path).is_file():
+            return send_from_directory(str(DIST_DIR), path)
+        # それ以外は SPA フォールバック
         return send_from_directory(str(DIST_DIR), "index.html")
 
 
