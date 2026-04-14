@@ -1,3 +1,5 @@
+import { useState, useEffect } from 'react'
+import { format, addDays } from 'date-fns'
 import { useCalendarEvents } from '@/hooks/useCalendarEvents'
 import { Header } from '@/components/Header'
 import { MemberCard } from '@/components/MemberCard'
@@ -41,14 +43,39 @@ function buildCards(events: CalendarEvent[], members: Member[]): CardEntry[] {
 }
 
 export function App() {
-  const { events, members, lastFetched, isConnected, isLoading } = useCalendarEvents()
+  const [isViewingTomorrow, setIsViewingTomorrow] = useState(false)
+  const [todayStr, setTodayStr] = useState(() => format(new Date(), 'yyyy-MM-dd'))
+
+  // 日付変更を検知したら今日ビューに戻す
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const newToday = format(new Date(), 'yyyy-MM-dd')
+      if (newToday !== todayStr) {
+        setTodayStr(newToday)
+        setIsViewingTomorrow(false)
+      }
+    }, 60 * 1000)
+    return () => clearInterval(timer)
+  }, [todayStr])
+
+  const tomorrowStr = format(addDays(new Date(todayStr), 1), 'yyyy-MM-dd')
+  const targetDate = isViewingTomorrow ? tomorrowStr : todayStr
+
+  // 表示用 Date オブジェクト（ローカル時刻 00:00 として解釈）
+  const displayDate = new Date(`${targetDate}T00:00:00`)
+
+  const { events, members, lastFetched, isConnected, isLoading } = useCalendarEvents(targetDate)
 
   const cards = buildCards(events, members)
   const hasEvents = events.length > 0
 
   return (
     <div className="flex flex-col h-screen bg-slate-100 text-slate-900">
-      <Header />
+      <Header
+        displayDate={displayDate}
+        isViewingTomorrow={isViewingTomorrow}
+        onToggle={() => setIsViewingTomorrow(v => !v)}
+      />
 
       <main className="flex-1 overflow-hidden px-6 py-5">
         {isLoading ? (

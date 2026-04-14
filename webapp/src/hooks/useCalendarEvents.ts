@@ -1,11 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { format } from 'date-fns'
 import type { ApiResponse, CalendarEvent, Member } from '@/types'
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string) ?? ''
 const POLL_INTERVAL_MS = 5 * 60 * 1000   // 5分
 const RETRY_INTERVAL_MS = 30 * 1000      // 30秒
-const DATE_CHECK_INTERVAL_MS = 60 * 1000 // 1分
 
 export interface CalendarState {
   events: CalendarEvent[]
@@ -13,21 +11,20 @@ export interface CalendarState {
   lastFetched: string | null
   isConnected: boolean
   isLoading: boolean
-  currentDate: string // YYYY-MM-DD
 }
 
-export function useCalendarEvents(): CalendarState {
+export function useCalendarEvents(targetDate: string): CalendarState {
   const [state, setState] = useState<CalendarState>({
     events: [],
     members: [],
     lastFetched: null,
     isConnected: false,
     isLoading: true,
-    currentDate: format(new Date(), 'yyyy-MM-dd'),
   })
 
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null)
+  const targetDateRef = useRef(targetDate)
 
   const clearRetry = () => {
     if (retryTimer.current !== null) {
@@ -38,7 +35,8 @@ export function useCalendarEvents(): CalendarState {
 
   const fetchEvents = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/events/today`)
+      const date = targetDateRef.current
+      const res = await fetch(`${API_BASE}/api/events?date=${date}`)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data: ApiResponse = await res.json()
 
@@ -50,11 +48,9 @@ export function useCalendarEvents(): CalendarState {
         lastFetched: data.last_fetched,
         isConnected: true,
         isLoading: false,
-        currentDate: data.date,
       }))
     } catch {
       setState(prev => ({ ...prev, isConnected: false, isLoading: false }))
-      // 未スケジュールならリトライをセット
       if (retryTimer.current === null) {
         retryTimer.current = setTimeout(() => {
           retryTimer.current = null
@@ -64,27 +60,20 @@ export function useCalendarEvents(): CalendarState {
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // targetDate が変わったら即座に再取得
   useEffect(() => {
+    targetDateRef.current = targetDate
+    setState(prev => ({ ...prev, isLoading: true, events: [] }))
+    clearRetry()
     fetchEvents()
+  }, [targetDate]) // eslint-disable-line react-hooks/exhaustive-deps
 
-    // 5分ポーリング
+  // 5分ポーリング
+  useEffect(() => {
     pollTimer.current = setInterval(fetchEvents, POLL_INTERVAL_MS)
-
-    // 日付変更検知（1分ごと）
-    const dateCheckTimer = setInterval(() => {
-      const today = format(new Date(), 'yyyy-MM-dd')
-      setState(prev => {
-        if (prev.currentDate !== today) {
-          fetchEvents()
-        }
-        return prev
-      })
-    }, DATE_CHECK_INTERVAL_MS)
-
     return () => {
       if (pollTimer.current !== null) clearInterval(pollTimer.current)
       clearRetry()
-      clearInterval(dateCheckTimer)
     }
   }, [fetchEvents])
 

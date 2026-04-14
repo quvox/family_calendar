@@ -36,17 +36,14 @@ export function MemberCard({ member, color, events }: Props) {
         style={{ backgroundColor: hexToRgba(color, 0.08) }}
       >
         {sorted.length === 0 ? (
-          <p className="text-sm" style={{ color }}>予定なし</p>
+          <p className="text-xl" style={{ color }}>予定なし</p>
         ) : (
           sorted.map(event => (
             <div key={event.id} className="flex items-baseline gap-3 overflow-hidden">
-              <span
-                className="shrink-0 text-lg font-semibold tabular-nums"
-                style={{ color }}
-              >
+              <span className="shrink-0 text-2xl font-semibold tabular-nums text-red-600">
                 {event.allDay ? '終日' : formatTime(event.start)}
               </span>
-              <span className="text-xl font-semibold text-slate-900 leading-snug break-words min-w-0">
+              <span className="text-2xl font-semibold text-slate-900 leading-snug break-words min-w-0">
                 {event.title}
               </span>
             </div>
