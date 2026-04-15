@@ -9,14 +9,30 @@ calendar:
   ics_url: "https://p00-caldav.icloud.com/published/2/YOUR_CALENDAR_URL_HERE"  # iCloud公開URL
 
 members:
+  # name: カレンダーアプリ上での表示名（必須）
+  # color: カードの色（#RRGGBB 形式、必須）
+  # aliases: カレンダーのイベントに書く別名（省略可、複数設定可）
+  #   name または aliases のいずれかに一致するとそのメンバーとして識別される
   - name: パパ
     color: "#4A90D9"
+    aliases:
+      - お父さん
+      - Dad
   - name: ママ
     color: "#E85D75"
+    aliases:
+      - お母さん
+      - Mom
   - name: 太郎
     color: "#50C878"
+    aliases:
+      - たろう
+      - Taro
   - name: 花子
     color: "#FFB347"
+    aliases:
+      - はなこ
+      - Hanako
 
 unassigned:
   color: "#888888"   # メンバー識別できなかったイベントの色

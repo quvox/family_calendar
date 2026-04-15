@@ -77,6 +77,15 @@ MEMBER_MAP: dict[str, str] = {m["name"]: m["color"] for m in config["members"]}
 UNASSIGNED_COLOR: str = config["unassigned"]["color"]
 FETCH_INTERVAL: int = max(1, config["server"]["fetch_interval_minutes"])
 
+# 名前・別名 → (正式名, color) のマッピング
+# イベントの DESCRIPTION / SUMMARY から任意の表記でメンバーを識別するために使う
+_ALIAS_MAP: dict[str, tuple[str, str]] = {}
+for _m in config["members"]:
+    _canonical, _color = _m["name"], _m["color"]
+    _ALIAS_MAP[_canonical] = (_canonical, _color)
+    for _alias in _m.get("aliases", []):
+        _ALIAS_MAP[str(_alias).strip()] = (_canonical, _color)
+
 last_fetched: datetime | None = None
 
 # ===== .ics 取得 =====
@@ -190,11 +199,8 @@ def _get_rie():
 # ===== メンバー識別 =====
 
 def _match_member(candidate: str) -> tuple[str, str] | None:
-    """文字列がいずれかのメンバー名と完全一致すれば (name, color) を返す。"""
-    name = candidate.strip()
-    if name in MEMBER_MAP:
-        return name, MEMBER_MAP[name]
-    return None
+    """文字列がいずれかのメンバー名または別名と完全一致すれば (canonical_name, color) を返す。"""
+    return _ALIAS_MAP.get(candidate.strip())
 
 
 def identify_member(description: str | None, title: str) -> tuple[str | None, str, str]:
@@ -202,10 +208,11 @@ def identify_member(description: str | None, title: str) -> tuple[str | None, st
     メンバーを識別し (member_name, color, display_title) を返す。
 
     優先順位:
-      1. DESCRIPTION 先頭行と members[].name の完全一致
-      2. SUMMARY（タイトル）の「メンバー名:」プレフィックス
+      1. DESCRIPTION 先頭行と members[].name または aliases の完全一致
+      2. SUMMARY（タイトル）の「名前または別名:」プレフィックス
     どちらにも一致しない場合は member_name=None, color=UNASSIGNED_COLOR。
     タイトルを加工する場合のみ display_title が入力と異なる。
+    返す member_name は常に正式名（canonical name）。
     """
     # 1. DESCRIPTION 先頭行で照合
     if description:
@@ -213,13 +220,13 @@ def identify_member(description: str | None, title: str) -> tuple[str | None, st
         if result:
             return result[0], result[1], title
 
-    # 2. SUMMARY プレフィックス「メンバー名:」で照合
-    for name, color in MEMBER_MAP.items():
-        prefix = name + ":"
+    # 2. SUMMARY プレフィックス「名前または別名:」で照合
+    for alias, (canonical, color) in _ALIAS_MAP.items():
+        prefix = alias + ":"
         if title.startswith(prefix):
             # コロン直後の連続空白を除去
             display_title = title[len(prefix):].lstrip(" ")
-            return name, color, display_title
+            return canonical, color, display_title
 
     logger.warning(f"メンバー未識別のイベント (title='{title}')")
     return None, UNASSIGNED_COLOR, title
@@ -278,7 +285,8 @@ def parse_events(target_date: date) -> list[dict]:
         if raw_desc:
             lines = raw_desc.split("\n")
             # 方法 A（DESCRIPTION 先頭行）で識別できた場合は先頭行を除く
-            if member is not None and lines[0].strip() == member:
+            # 先頭行が正式名または別名であればメンバー識別子として除去する
+            if member is not None and _match_member(lines[0].strip()) is not None:
                 desc_body = "\n".join(lines[1:]).strip() or None
             else:
                 # 方法 B（タイトルプレフィックス）または未識別の場合は全行を本文とする
