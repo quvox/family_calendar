@@ -1,14 +1,12 @@
-import { VolumeX } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
 
 interface Props {
   isConnected: boolean
   lastFetched: string | null
   isLoading: boolean
-  audioReady: boolean
 }
 
-export function StatusBar({ isConnected, lastFetched, isLoading, audioReady }: Props) {
+export function StatusBar({ isConnected, lastFetched, isLoading }: Props) {
   const updatedAt = lastFetched
     ? format(parseISO(lastFetched), 'HH:mm')
     : null
@@ -33,17 +31,9 @@ export function StatusBar({ isConnected, lastFetched, isLoading, audioReady }: P
           </>
         )}
       </div>
-      <div className="flex items-center gap-4">
-        {!audioReady && (
-          <span className="flex items-center gap-1 text-sm text-amber-600">
-            <VolumeX size={14} className="shrink-0" />
-            画面をタップするとアラーム音が有効になります
-          </span>
-        )}
-        {updatedAt && (
-          <span className="text-sm text-slate-400">最終更新: {updatedAt}</span>
-        )}
-      </div>
+      {updatedAt && (
+        <span className="text-sm text-slate-400">最終更新: {updatedAt}</span>
+      )}
     </footer>
   )
 }

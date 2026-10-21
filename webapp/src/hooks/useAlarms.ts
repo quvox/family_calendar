@@ -3,6 +3,7 @@ import { parseISO } from 'date-fns'
 import type { CalendarEvent } from '@/types'
 import {
   isAudioReady,
+  probeAutoplay,
   subscribeAudioState,
   unlockAudio,
   startAlarmSound,
@@ -64,6 +65,7 @@ export function useAlarms(todayEvents: CalendarEvent[]): AlarmState {
   // タッチ操作では pointerdown ではなく pointerup / touchend がユーザー操作として扱われる
   useEffect(() => {
     const types = ['pointerdown', 'pointerup', 'touchend', 'keydown'] as const
+    probeAutoplay()
     types.forEach(t => window.addEventListener(t, unlockAudio, true))
     return () => types.forEach(t => window.removeEventListener(t, unlockAudio, true))
   }, [])

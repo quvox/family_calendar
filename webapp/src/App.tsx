@@ -7,6 +7,7 @@ import { MemberCard } from '@/components/MemberCard'
 import { EmptyState } from '@/components/EmptyState'
 import { StatusBar } from '@/components/StatusBar'
 import { AlarmModal } from '@/components/AlarmModal'
+import { AudioUnlockModal } from '@/components/AudioUnlockModal'
 import type { CalendarEvent, Member } from '@/types'
 
 const UNASSIGNED_LABEL = '全員'
@@ -109,9 +110,10 @@ export function App() {
         isConnected={isConnected}
         lastFetched={lastFetched}
         isLoading={isLoading}
-        audioReady={audioReady}
       />
 
+      {/* アラーム表示中はそちらを優先する（アラームの OK タップでも音声は有効になる） */}
+      <AudioUnlockModal open={!audioReady && activeAlarms.length === 0} />
       <AlarmModal alarms={activeAlarms} onDismiss={dismiss} />
     </div>
   )

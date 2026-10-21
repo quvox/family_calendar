@@ -20,9 +20,9 @@ let unlocking = false
 let ringing = false
 const listeners = new Set<() => void>()
 
-/** ビープ4回＋無音を1サイクルとする 16bit モノラル WAV を生成する */
-function createBeepWavUrl(): string {
-  const numSamples = Math.floor(SAMPLE_RATE * CYCLE_SEC)
+/** sample(t) で波形（-1〜1）を与えて 16bit モノラル WAV を生成する */
+function createWavUrl(seconds: number, sample: (t: number) => number): string {
+  const numSamples = Math.floor(SAMPLE_RATE * seconds)
   const buf = new ArrayBuffer(44 + numSamples * 2)
   const view = new DataView(buf)
   const writeStr = (offset: number, s: string) => {
@@ -43,22 +43,23 @@ function createBeepWavUrl(): string {
   writeStr(36, 'data')
   view.setUint32(40, numSamples * 2, true)
 
-  const period = BEEP_SEC + BEEP_GAP_SEC
   for (let i = 0; i < numSamples; i++) {
-    const t = i / SAMPLE_RATE
-    const idx = Math.floor(t / period)
-    const local = t - idx * period
-    let v = 0
-    if (idx < BEEPS_PER_CYCLE && local < BEEP_SEC) {
-      // クリックノイズを避けるため立ち上がり・立ち下がりにランプをかける
-      const env = Math.min(1, local / RAMP_SEC, (BEEP_SEC - local) / RAMP_SEC)
-      const square = Math.sin(2 * Math.PI * BEEP_FREQ_HZ * t) >= 0 ? 1 : -1
-      v = square * AMPLITUDE * env
-    }
-    view.setInt16(44 + i * 2, Math.round(v * 0x7fff), true)
+    view.setInt16(44 + i * 2, Math.round(sample(i / SAMPLE_RATE) * 0x7fff), true)
   }
 
   return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }))
+}
+
+/** ビープ4回＋無音を1サイクルとする波形 */
+function beepSample(t: number): number {
+  const period = BEEP_SEC + BEEP_GAP_SEC
+  const idx = Math.floor(t / period)
+  const local = t - idx * period
+  if (idx >= BEEPS_PER_CYCLE || local >= BEEP_SEC) return 0
+  // クリックノイズを避けるため立ち上がり・立ち下がりにランプをかける
+  const env = Math.min(1, local / RAMP_SEC, (BEEP_SEC - local) / RAMP_SEC)
+  const square = Math.sin(2 * Math.PI * BEEP_FREQ_HZ * t) >= 0 ? 1 : -1
+  return square * AMPLITUDE * env
 }
 
 function getAudio(): HTMLAudioElement {
@@ -67,7 +68,7 @@ function getAudio(): HTMLAudioElement {
   const nav = navigator as Navigator & { audioSession?: { type: string } }
   if (nav.audioSession) nav.audioSession.type = 'playback'
 
-  audio = new Audio(createBeepWavUrl())
+  audio = new Audio(createWavUrl(CYCLE_SEC, beepSample))
   audio.loop = true
   audio.preload = 'auto'
   return audio
@@ -88,6 +89,25 @@ export function subscribeAudioState(fn: () => void): () => void {
   return () => listeners.delete(fn)
 }
 
+function setUnlocked(value: boolean): void {
+  if (unlocked === value) return
+  unlocked = value
+  notify()
+}
+
+/**
+ * ユーザー操作なしで音を出せるか、無音の音声を再生して確かめる。
+ * 自動再生が許可されている環境（Chrome で過去に操作したサイト等）ではタップ不要になる。
+ */
+export function probeAutoplay(): void {
+  if (unlocked) return
+  getAudio()  // audioSession の設定を先に済ませる
+  const probe = new Audio(createWavUrl(0.1, () => 0))
+  probe.play()
+    .then(() => setUnlocked(true))
+    .catch(() => {})
+}
+
 /** ユーザー操作のイベントハンドラ内から呼ぶこと */
 export function unlockAudio(): void {
   if (unlocked || unlocking) return
@@ -97,13 +117,12 @@ export function unlockAudio(): void {
   a.muted = !ringing
   a.play()
     .then(() => {
-      unlocked = true
       if (!ringing) {
         a.pause()
         a.currentTime = 0
       }
       a.muted = false
-      notify()
+      setUnlocked(true)
     })
     .catch(() => {
       a.muted = false
@@ -121,13 +140,9 @@ export function startAlarmSound(): void {
   a.currentTime = 0
   // 未準備の場合は拒否されるが、次のタップ（unlockAudio）で鳴り始める
   a.play()
-    .then(() => {
-      if (!unlocked) {
-        unlocked = true
-        notify()
-      }
-    })
-    .catch(() => {})
+    .then(() => setUnlocked(true))
+    // 再生を拒否された場合は未準備に戻し、OK ボタンのモーダルで再度有効化してもらう
+    .catch(() => setUnlocked(false))
 }
 
 export function stopAlarmSound(): void {
