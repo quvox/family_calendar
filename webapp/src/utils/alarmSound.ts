@@ -18,6 +18,9 @@ let audio: HTMLAudioElement | null = null
 let unlocked = false
 let unlocking = false
 let ringing = false
+let checking = false
+let beepUrl = ''
+let silentUrl = ''
 const listeners = new Set<() => void>()
 
 /** sample(t) で波形（-1〜1）を与えて 16bit モノラル WAV を生成する */
@@ -68,7 +71,9 @@ function getAudio(): HTMLAudioElement {
   const nav = navigator as Navigator & { audioSession?: { type: string } }
   if (nav.audioSession) nav.audioSession.type = 'playback'
 
-  audio = new Audio(createWavUrl(CYCLE_SEC, beepSample))
+  beepUrl = createWavUrl(CYCLE_SEC, beepSample)
+  silentUrl = createWavUrl(0.1, () => 0)
+  audio = new Audio(beepUrl)
   audio.loop = true
   audio.preload = 'auto'
   return audio
@@ -101,16 +106,49 @@ function setUnlocked(value: boolean): void {
  */
 export function probeAutoplay(): void {
   if (unlocked) return
-  getAudio()  // audioSession の設定を先に済ませる
-  const probe = new Audio(createWavUrl(0.1, () => 0))
+  getAudio()  // audioSession の設定と silentUrl の生成を先に済ませる
+  const probe = new Audio(silentUrl)
   probe.play()
     .then(() => setUnlocked(true))
     .catch(() => {})
 }
 
+/** 再生失敗が自動再生の拒否によるものか（中断による AbortError 等は除く） */
+function isNotAllowed(err: unknown): boolean {
+  return err instanceof DOMException && err.name === 'NotAllowedError'
+}
+
+/**
+ * 鳴らせる状態が保たれているか定期的に確かめる。
+ * iOS は要素ごとに再生許可を管理するため、アラーム用の要素自体に無音データを入れて
+ * 消音せずに再生する（消音再生は常に許可されるため確認にならない）。
+ */
+export function checkAudio(): void {
+  if (!unlocked || ringing || unlocking || checking) return
+  const a = getAudio()
+  checking = true
+  a.src = silentUrl
+  a.loop = false
+  a.muted = false
+  a.play()
+    .then(() => setUnlocked(true))
+    .catch(err => {
+      if (isNotAllowed(err)) setUnlocked(false)
+    })
+    .finally(() => {
+      checking = false
+      // 確認中にアラームが始まった場合は startAlarmSound 側で音源を戻して再生中
+      if (!ringing) {
+        a.pause()
+        a.src = beepUrl
+        a.loop = true
+      }
+    })
+}
+
 /** ユーザー操作のイベントハンドラ内から呼ぶこと */
 export function unlockAudio(): void {
-  if (unlocked || unlocking) return
+  if (unlocked || unlocking || checking) return
   const a = getAudio()
   unlocking = true
   // 鳴動中でなければ無音で再生してすぐ止める
@@ -136,13 +174,20 @@ export function startAlarmSound(): void {
   if (ringing) return
   ringing = true
   const a = getAudio()
+  if (checking) {
+    // 定期確認の無音データが入っているので音源を戻す
+    a.src = beepUrl
+    a.loop = true
+  }
   a.muted = false
   a.currentTime = 0
   // 未準備の場合は拒否されるが、次のタップ（unlockAudio）で鳴り始める
   a.play()
     .then(() => setUnlocked(true))
     // 再生を拒否された場合は未準備に戻し、OK ボタンのモーダルで再度有効化してもらう
-    .catch(() => setUnlocked(false))
+    .catch(err => {
+      if (isNotAllowed(err)) setUnlocked(false)
+    })
 }
 
 export function stopAlarmSound(): void {

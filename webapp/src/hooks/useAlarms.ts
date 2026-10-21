@@ -3,6 +3,7 @@ import { parseISO } from 'date-fns'
 import type { CalendarEvent } from '@/types'
 import {
   isAudioReady,
+  checkAudio,
   probeAutoplay,
   subscribeAudioState,
   unlockAudio,
@@ -13,6 +14,7 @@ import {
 const LEAD_MS = 10 * 60 * 1000          // 予定開始の10分前に鳴らす
 const RING_MS = 15 * 60 * 1000          // OK を押さなければ15分で自動停止
 const CHECK_INTERVAL_MS = 5 * 1000
+const AUDIO_CHECK_INTERVAL_MS = 30 * 1000  // 音を鳴らせる状態かの定期確認
 const FIRED_STORAGE_KEY = 'family-calendar:fired-alarms'
 const FIRED_RETENTION_MS = 2 * 24 * 60 * 60 * 1000
 
@@ -68,6 +70,19 @@ export function useAlarms(todayEvents: CalendarEvent[]): AlarmState {
     probeAutoplay()
     types.forEach(t => window.addEventListener(t, unlockAudio, true))
     return () => types.forEach(t => window.removeEventListener(t, unlockAudio, true))
+  }, [])
+
+  // 鳴らせる状態が保たれているか定期的に確認する（画面が前面に戻ったときも確認）
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') checkAudio()
+    }
+    const timer = setInterval(checkAudio, AUDIO_CHECK_INTERVAL_MS)
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      clearInterval(timer)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
   }, [])
 
   useEffect(() => {
