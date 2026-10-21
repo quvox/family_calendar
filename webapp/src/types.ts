@@ -6,6 +6,7 @@ export interface CalendarEvent {
   start: string
   end: string
   allDay: boolean
+  alarm?: boolean
   location?: string | null
   description?: string | null
 }

@@ -28,6 +28,8 @@ logger = logging.getLogger(__name__)
 BASE_DIR = Path(__file__).parent
 COLOR_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
 JST = ZoneInfo("Asia/Tokyo")
+# タイトル先頭に付けるとアラーム対象になる記号（iPhone の日本語入力で全角になる場合も考慮）
+ALARM_MARKS = ("!", "！")
 
 # ===== 設定読み込み =====
 
@@ -281,6 +283,11 @@ def parse_events(target_date: date) -> list[dict]:
         raw_title = str(component.get("SUMMARY") or "")
         member, color, display_title = identify_member(raw_desc or None, raw_title)
 
+        # タイトル先頭の「!」（全角「！」も可）はアラーム指定。表示タイトルからは除去する
+        alarm = display_title.startswith(ALARM_MARKS)
+        if alarm:
+            display_title = display_title.lstrip("".join(ALARM_MARKS)).lstrip(" ")
+
         # description 本文の組み立て
         if raw_desc:
             lines = raw_desc.split("\n")
@@ -302,6 +309,7 @@ def parse_events(target_date: date) -> list[dict]:
             "start": start_str,
             "end": end_str,
             "allDay": all_day,
+            "alarm": alarm,
             "location": str(component.get("LOCATION") or "").strip() or None,
             "description": desc_body or None,
         })

@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react'
 import { format, addDays } from 'date-fns'
 import { useCalendarEvents } from '@/hooks/useCalendarEvents'
+import { useAlarms } from '@/hooks/useAlarms'
 import { Header } from '@/components/Header'
 import { MemberCard } from '@/components/MemberCard'
 import { EmptyState } from '@/components/EmptyState'
 import { StatusBar } from '@/components/StatusBar'
+import { AlarmModal } from '@/components/AlarmModal'
 import type { CalendarEvent, Member } from '@/types'
 
 const UNASSIGNED_LABEL = '全員'
@@ -64,7 +66,12 @@ export function App() {
   // 表示用 Date オブジェクト（ローカル時刻 00:00 として解釈）
   const displayDate = new Date(`${targetDate}T00:00:00`)
 
-  const { events, members, lastFetched, isConnected, isLoading } = useCalendarEvents(targetDate)
+  // アラーム判定のため、明日を表示中も今日の予定は常に取得しておく
+  const today = useCalendarEvents(todayStr)
+  const tomorrow = useCalendarEvents(isViewingTomorrow ? tomorrowStr : null)
+  const { events, members, lastFetched, isConnected, isLoading } = isViewingTomorrow ? tomorrow : today
+
+  const { activeAlarms, dismiss, audioReady } = useAlarms(today.events)
 
   const cards = buildCards(events, members)
   const hasEvents = events.length > 0
@@ -102,7 +109,10 @@ export function App() {
         isConnected={isConnected}
         lastFetched={lastFetched}
         isLoading={isLoading}
+        audioReady={audioReady}
       />
+
+      <AlarmModal alarms={activeAlarms} onDismiss={dismiss} />
     </div>
   )
 }

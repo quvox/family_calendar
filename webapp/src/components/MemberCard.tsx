@@ -1,3 +1,4 @@
+import { Bell } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
 import type { CalendarEvent } from '@/types'
 
@@ -46,6 +47,9 @@ export function MemberCard({ member, color, events }: Props) {
               <span className="text-2xl font-semibold text-slate-900 leading-snug break-words min-w-0">
                 {event.title}
               </span>
+              {event.alarm && (
+                <Bell size={20} className="shrink-0 self-center text-red-600" aria-label="アラームあり" />
+              )}
             </div>
           ))
         )}

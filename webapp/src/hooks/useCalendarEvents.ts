@@ -13,7 +13,11 @@ export interface CalendarState {
   isLoading: boolean
 }
 
-export function useCalendarEvents(targetDate: string): CalendarState {
+/**
+ * targetDate のイベントを取得・ポーリングする。
+ * targetDate に null を渡すと取得を停止する（未使用時に余計なリクエストを出さないため）。
+ */
+export function useCalendarEvents(targetDate: string | null): CalendarState {
   const [state, setState] = useState<CalendarState>({
     events: [],
     members: [],
@@ -36,9 +40,12 @@ export function useCalendarEvents(targetDate: string): CalendarState {
   const fetchEvents = useCallback(async () => {
     try {
       const date = targetDateRef.current
+      if (date === null) return
       const res = await fetch(`${API_BASE}/api/events?date=${date}`)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data: ApiResponse = await res.json()
+      // 取得中に対象日が切り替わった場合は古い結果を捨てる
+      if (targetDateRef.current !== date) return
 
       clearRetry()
       setState(prev => ({
@@ -63,8 +70,12 @@ export function useCalendarEvents(targetDate: string): CalendarState {
   // targetDate が変わったら即座に再取得
   useEffect(() => {
     targetDateRef.current = targetDate
-    setState(prev => ({ ...prev, isLoading: true, events: [] }))
     clearRetry()
+    if (targetDate === null) {
+      setState(prev => ({ ...prev, isLoading: false, events: [] }))
+      return
+    }
+    setState(prev => ({ ...prev, isLoading: true, events: [] }))
     fetchEvents()
   }, [targetDate]) // eslint-disable-line react-hooks/exhaustive-deps
 
